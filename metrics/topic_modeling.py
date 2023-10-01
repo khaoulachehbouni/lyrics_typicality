@@ -1,10 +1,11 @@
 import numpy as np
 import scipy
-import spicy
 import gensim
 import gensim.corpora as corpora
 import sklearn
 from sklearn.model_selection import KFold 
+from scipy.spatial import distance
+from math import log2
 
 ##############################################Reproduction of the method in the paper: how many topics, but I think their method is useless
 #Pre-process text for lda
@@ -82,6 +83,68 @@ def stability_topics(lyrics_column, k_min, k_max, t):
             stability_list.append(stability)
         stability_kfold = sum(stability_list)/10
         stab_by_topics[k_topics] = stability_kfold
+      return stab_by_topics
+
+
+if __name__ == "__main__":
+  #Load dataset
+  top5_df = pd.read_csv("/content/df.csv") #put path to csv file here
+  
+  #Run LDA
+  #Find an optimal number of topics
+  stab_by_topics = stability_topics(top5_df["word_list_lemmatized"], 4, 22, 20)
+  print(stab_by_topic) #chose 4 topics
+
+  #Run LDA
+  lda_model = (top5_df["word_list_lemmatized"], 4)
+
+  #GET DOCUMENTS TOPICS
+  #https://stackoverflow.com/questions/66403628/how-to-change-topic-list-from-gensim-lda-get-document-topics-to-a-dataframe
+  top5_df['topics'] = lda_model.get_document_topics(corpus, minimum_probability=0.0)
+  sf = pd.DataFrame(data=top5_df['topics'])
+  af = pd.DataFrame()
+  for i in range(5):
+      af[str(i)]=[]
+  frames = [sf,af]
+  af = pd.concat(frames).fillna(0)
+  for i in range(1480):
+      for j in range(len(top5_df['topics'][i])):
+          af[str(top5_df['topics'][i][j][0])].loc[i] = top5_df['topics'][i][j][1]
+
+  
+  #Add them to the dataframe
+  top5_df_topics = pd.merge(top5_df.reset_index(),af.reset_index(),how='inner', right_on='index', left_on='index')
+
+  #Compute cosine distance between topics
+  topic0 = lda_model.get_topics()[0]
+  topic1 = lda_model.get_topics()[1]
+  topic2 = lda_model.get_topics()[2]
+  topic3 = lda_model.get_topics()[3]
+  topic4 = lda_model.get_topics()[4]
+  
+  cos04 = distance.cosine(topic0,topic4)
+  cos14 = distance.cosine(topic1,topic4)
+  cos24 = distance.cosine(topic2,topic4)
+  cos34 = distance.cosine(topic3,topic4)
+
+  top5_df_topics['distTop'] = cos04*top5_df_topics['0'] + cos14*top5_df_topics['1']+cos24*top5_df_topics['2']+cos34*top5_df_topics['3']
+
+
+  #Compute KL divergence between topics
+
+  # calculate the KL divergence
+  def kl_divergence(p, q):
+  	return sum(p[i] * log2(p[i]/q[i]) for i in range(len(p)))
+  
+  df_topics = top5_df_topics[['0_y', '1_y', '2_y', '3_y']]
+  df_topics.loc['mean'] = df_topics.mean()
+
+  list_div = []
+  for index, row in df_topics.iterrows():
+    div = kl_divergence(row, df_topics.loc['mean'])
+    list_div.append(div)
+
+  top5_df_topics['kl_div'] = list_div
 
 
 
